@@ -36,7 +36,7 @@ if (!result.success) {
     process.exit(1);
 }
 
-// Step 3: Post-process — replace Bun-only `import.meta.require` with Node.js compatible version
+// Step 3: Post-process — replace Bun-only APIs with Node.js compatible versions
 const files = await readdir(outdir);
 const IMPORT_META_REQUIRE = "var __require = import.meta.require;";
 const COMPAT_REQUIRE = `var __require = typeof import.meta.require === "function" ? import.meta.require : (await import("module")).createRequire(import.meta.url);`;
@@ -45,12 +45,47 @@ let patched = 0;
 for (const file of files) {
     if (!file.endsWith(".js")) continue;
     const filePath = join(outdir, file);
-    const content = await readFile(filePath, "utf-8");
+    let content = await readFile(filePath, "utf-8");
+    let needsWrite = false;
+
+    // Patch import.meta.require
     if (content.includes(IMPORT_META_REQUIRE)) {
-        await writeFile(
-            filePath,
-            content.replace(IMPORT_META_REQUIRE, COMPAT_REQUIRE),
+        content = content.replace(IMPORT_META_REQUIRE, COMPAT_REQUIRE);
+        needsWrite = true;
+    }
+
+    // Patch globalThis.Bun.$ destructuring
+    if (content.includes("var {$ } = globalThis.Bun;")) {
+        content = content.replace(
+            "var {$ } = globalThis.Bun;",
+            `var {$ } = typeof globalThis.Bun !== "undefined" ? globalThis.Bun : {
+                $: function() { throw new Error("Bun.$ is not available in Node.js"); }
+            };`
         );
+        needsWrite = true;
+    }
+
+    // Patch other Bun.$ destructuring patterns
+    if (content.includes("var { $ } = globalThis.Bun;")) {
+        content = content.replace(
+            "var { $ } = globalThis.Bun;",
+            `var { $ } = typeof globalThis.Bun !== "undefined" ? globalThis.Bun : {
+                $: function() { throw new Error("Bun.$ is not available in Node.js"); }
+            };`
+        );
+        needsWrite = true;
+    }
+
+    // Patch direct Bun.spawnSync usage
+    if (content.includes("Bun.spawnSync") && !content.includes("var Bun =")) {
+        content = `var Bun = typeof globalThis.Bun !== "undefined" ? globalThis.Bun : {
+            spawnSync: function() { throw new Error("Bun.spawnSync is not available in Node.js"); }
+        };\n` + content;
+        needsWrite = true;
+    }
+
+    if (needsWrite) {
+        await writeFile(filePath, content);
         patched++;
     }
 }
