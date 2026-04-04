@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(bun run:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(bun dist/cli.js --version)",
+      "Bash(grep -r \"打包\\\\|复制\\\\|部署\\\\|distribution\\\\|deployment\" docs/ --include=*.md)",
+      "Bash(ls -la docs/*.md)",
+      "Bash(ls:*)"
     ]
   }
 }
